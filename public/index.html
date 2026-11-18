@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lounj · Hookah lounges near you</title>
+<meta name="description" content="Find hookah lounges near you, anywhere in the world. Hours, directions, phone numbers and online booking.">
+<meta name="theme-color" content="#FBF7F1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16130F" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="Lounj · Hookah lounges near you">
+<meta property="og:description" content="Find hookah lounges near you, anywhere in the world.">
+<meta property="og:image" content="/icons/og.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <a class="logo" href="#" id="logo" aria-label="Lounj home"><span class="mark">L</span>Lounj</a>
+  <button class="where" id="whereBtn" aria-label="Change location">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+    <span id="whereTxt">Set location</span>
+    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
+</header>
+
+<main id="main">
+  <!-- Welcome -->
+  <section class="view" id="v-welcome" hidden>
+    <div class="welcome">
+      <div class="hero-art" aria-hidden="true"></div>
+      <h1>Find a hookah lounge near you</h1>
+      <p class="lead">Hours, directions and phone numbers for lounges anywhere in the world. Book online where it's available.</p>
+      <button class="btn primary big" id="useLoc">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/></svg>
+        Use my location
+      </button>
+      <button class="btn ghost big" id="searchCity">Search a city instead</button>
+      <p class="fine">Your location is only used to find lounges near you. It isn't stored on our servers.</p>
+    </div>
+  </section>
+
+  <!-- Explore -->
+  <section class="view" id="v-explore" hidden>
+    <div class="controls">
+      <label class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+        <input id="q" type="search" placeholder="Filter by name" autocomplete="off" aria-label="Filter lounges by name">
+      </label>
+      <div class="chips" role="group" aria-label="Filters">
+        <button class="chip" id="fOpen" aria-pressed="false">Open now</button>
+        <span class="divider" aria-hidden="true"></span>
+        <div id="radii" class="radii" role="radiogroup" aria-label="Distance"></div>
+      </div>
+    </div>
+    <div class="status" id="status" aria-live="polite"></div>
+    <ul class="list" id="list" aria-label="Lounges"></ul>
+    <div class="credit" id="credit"></div>
+  </section>
+
+  <!-- Map -->
+  <section class="view" id="v-map" hidden>
+    <div id="map" aria-label="Map of lounges"></div>
+    <div class="mapcard" id="mapcard" hidden></div>
+  </section>
+
+  <!-- Saved -->
+  <section class="view" id="v-saved" hidden>
+    <h2 class="pagetitle">Saved lounges</h2>
+    <ul class="list" id="savedList"></ul>
+    <div class="empty" id="savedEmpty"><div class="empty-ic">♡</div><p>Tap <b>Save</b> on any lounge to keep it here.</p></div>
+  </section>
+
+  <!-- About -->
+  <section class="view" id="v-about" hidden>
+    <h2 class="pagetitle">About Lounj</h2>
+    <div class="panel prose">
+      <p><b>Lounj</b> helps you find hookah lounges wherever you are, with hours, directions and contact details in one place.</p>
+      <p>Lounges marked <span class="badge book">Book</span> take reservations right in the app. For the rest, tap <b>Request online booking</b> and we'll let the lounge know guests want it.</p>
+    </div>
+    <div class="panel">
+      <h3>Own a hookah lounge?</h3>
+      <p class="muted">Claim your free listing to add photos, hours, deals and online booking with deposits.</p>
+      <button class="btn primary" id="claimAny">Claim or add your lounge</button>
+    </div>
+    <div class="panel">
+      <h3>Settings</h3>
+      <div class="setrow"><span>Distance units</span>
+        <div class="seg" role="radiogroup" aria-label="Distance units"><button data-u="mi" role="radio">Miles</button><button data-u="km" role="radio">Kilometers</button></div></div>
+    </div>
+    <div class="panel prose small">
+      <p>Lounj lists venues for adults. Age rules for hookah vary by country and city; bring a valid ID.</p>
+      <p>Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors. Listings may be incomplete or out of date. Missing a lounge? <a href="#" id="addMissing">Tell us</a>.</p>
+      <p>Contact: <a href="mailto:info@chicagoshisha.com">info@chicagoshisha.com</a></p>
+    </div>
+  </section>
+</main>
+
+<!-- Details sheet -->
+<div class="sheet" id="detail" role="dialog" aria-modal="true" aria-labelledby="dName" hidden>
+  <div class="sheet-inner" id="detailInner"></div>
+</div>
+
+<!-- Location search sheet -->
+<div class="sheet small-sheet" id="locSheet" role="dialog" aria-modal="true" aria-labelledby="locTitle" hidden>
+  <div class="sheet-inner">
+    <div class="sheet-head"><h2 id="locTitle">Choose a location</h2><button class="icon-btn" data-close aria-label="Close">✕</button></div>
+    <button class="btn primary" id="locHere">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/></svg>
+      Use my current location</button>
+    <label class="search" style="margin-top:14px">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="cityQ" type="search" placeholder="City, neighborhood or address" autocomplete="off" aria-label="Search a place">
+    </label>
+    <ul class="results" id="cityResults"></ul>
+  </div>
+</div>
+
+<!-- Form sheet -->
+<div class="sheet small-sheet" id="formSheet" role="dialog" aria-modal="true" aria-labelledby="formTitle" hidden>
+  <div class="sheet-inner" id="formInner"></div>
+</div>
+
+<!-- Age notice -->
+<div class="sheet small-sheet" id="ageSheet" role="dialog" aria-modal="true" aria-labelledby="ageTitle" hidden>
+  <div class="sheet-inner center">
+    <div class="age-ic" aria-hidden="true">18+ / 21+</div>
+    <h2 id="ageTitle">For adults only</h2>
+    <p class="muted">Lounj lists hookah lounges. Please confirm you're of legal age where you live.</p>
+    <button class="btn primary big" id="ageYes">I'm of legal age</button>
+    <a class="btn ghost big" href="https://www.google.com/">Leave</a>
+  </div>
+</div>
+
+<nav class="tabs" aria-label="Main">
+  <button data-v="explore" class="on"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><span>Explore</span></button>
+  <button data-v="map"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg><span>Map</span></button>
+  <button data-v="saved"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg><span>Saved</span></button>
+  <button data-v="about"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg><span>About</span></button>
+</nav>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="/app.js" defer></script>
+</body>
+</html>
