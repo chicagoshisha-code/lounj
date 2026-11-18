@@ -125,8 +125,20 @@
   const PAL = ['#B5532B', '#8A5A2B', '#2F6F5E', '#7A4E8A', '#A23F4F', '#3D6A9A', '#9A7B2F', '#5B6B3A'];
   function color(name) { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0; return PAL[h % PAL.length]; }
   function initials(name) { return (name.replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('') || '•').toUpperCase(); }
+  // Generated cover art for places without photos: warm glow, smoke curls and a hookah silhouette.
+  const HOOKAH_PATH = "M42 4h36v6h-3l-6 20H51l-6-20h-3zM24 33h72v8H24zM56 41h8v95h-8zM51 56h18v10H51zM49 82h22v14H49zM55 134c-2 16-22 25-28 40-5 14 4 21 33 21s38-7 33-21c-6-15-26-24-28-40z";
+  const artCache = new Map();
+  function art(p) {
+    if (artCache.has(p.name)) return artCache.get(p.name);
+    let h = 0; for (const c of p.name) h = (h * 33 + c.charCodeAt(0)) >>> 0;
+    const glow = ['#C8642E', '#B8862F', '#9A4A6B', '#3F7F6E', '#7E5BA8', '#B4473F', '#4F79B0', '#A86A2B'][h % 8];
+    const x = 55 + (h % 30), r = (h >> 5) % 2 ? 1 : -1;
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 240' preserveAspectRatio='xMidYMid slice'><defs><radialGradient id='g' cx='${x}%' cy='35%' r='85%'><stop offset='0' stop-color='${glow}'/><stop offset='.55' stop-color='${glow}' stop-opacity='.35'/><stop offset='1' stop-color='#0f0c0a'/></radialGradient></defs><rect width='400' height='240' fill='#120e0b'/><rect width='400' height='240' fill='url(#g)'/><g fill='none' stroke='rgba(255,236,210,.20)' stroke-width='3' stroke-linecap='round'><path d='M${300 * 1} 230c${-22 * r}-34 ${30 * r}-52 ${10 * r}-86s${32 * r}-52 ${10 * r}-96'/><path d='M${334} 236c${-16 * r}-26 ${26 * r}-46 ${8 * r}-72s${26 * r}-46 ${8 * r}-82'/><path d='M80 240c-18-30 26-46 8-74' stroke-opacity='.6'/></g><g transform='translate(${x * 4 - 60} 52) scale(.9)' fill='rgba(255,236,210,.16)'><path d='${HOOKAH_PATH}'/></g></svg>`;
+    const v = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+    artCache.set(p.name, v); return v;
+  }
   function thumb(p, cls = 'thumb') {
-    const bg = `background:linear-gradient(140deg,${color(p.name)},${color(p.name + 'x')})`;
+    const bg = `background-image:${esc(art(p))}`;
     return `<div class="${cls}" style="${bg}">${p.photo ? `<img src="${esc(p.photo)}" alt="" loading="lazy">` : esc(initials(p.name))}</div>`;
   }
 
@@ -341,14 +353,27 @@
     const st = openState(p);
     return st === 'open' ? `<span class="open">${esc(t('openNow'))}</span>` : st === 'closed' ? `<span class="closed">${esc(t('closed'))}</span>` : `<span class="unk">${esc(t('noHours'))}</span>`;
   }
-  function cardHtml(p, i) {
+  function cardHtml(p, i, compact) {
     const tags = [];
     if (p.partner) tags.push(`<span class="badge book">${esc(t('book'))}</span>`);
-    if (p.cat && p.cat !== 'lounge') tags.push(`<span class="tag cat">${esc(catLabel(p))}${p.cuisine ? ' · ' + esc(p.cuisine) : ''}</span>`);
+    if (compact && p.cat && p.cat !== 'lounge') tags.push(`<span class="tag cat">${esc(catLabel(p))}${p.cuisine ? ' · ' + esc(p.cuisine) : ''}</span>`);
+    if (!compact && p.cuisine) tags.push(`<span class="tag cat">${esc(p.cuisine)}</span>`);
     if (p.confirmed) tags.push(`<span class="tag ok">✓ ${esc(t('confirmedBy'))}</span>`);
     if (p.outdoor) tags.push(`<span class="tag">${esc(t('outdoor'))}</span>`);
     if (p.food) tags.push(`<span class="tag">${esc(t('food'))}</span>`);
     if (p.price) tags.push(`<span class="tag">${esc(p.price)}</span>`);
+    if (!compact) {
+      const st = openState(p);
+      const pill = st === 'open' ? `<span class="pill open">${esc(t('openNow'))}</span>` : st === 'closed' ? `<span class="pill closed">${esc(t('closed'))}</span>` : '';
+      return `<li class="rise" style="animation-delay:${Math.min(i || 0, 8) * 40}ms"><button class="card big" data-id="${esc(p.id)}">
+      <div class="cover" style="background-image:${esc(art(p))}">${p.photo ? `<img src="${esc(p.photo)}" alt="" loading="lazy">` : ''}
+        <div class="cover-top">${pill}${p.rating ? `<span class="pill rate">★ ${p.rating.toFixed(1)}</span>` : ''}</div>
+        <div class="cover-bottom"><h3>${esc(p.name)}</h3>
+          <div class="cover-sub">${esc(p.cat ? catLabel(p) : t('hookahLounge'))}${p.d != null ? ' · ' + fmtDist(p.d) : ''}</div></div>
+      </div>
+      ${p.address || tags.length ? `<div class="card-foot">${p.address ? `<div class="addr">${esc(p.address)}</div>` : ''}${tags.length ? `<div class="tags">${tags.join('')}</div>` : ''}</div>` : ''}
+      </button></li>`;
+    }
     return `<li><button class="card" data-id="${esc(p.id)}">
       ${thumb(p)}
       <div style="min-width:0">
@@ -373,12 +398,12 @@
       if ($('#widen')) $('#widen').onclick = () => { S.radiusIdx = Math.min(3, S.radiusIdx + 1); store.set('radiusIdx', S.radiusIdx); renderRadii(); load(); };
       $('#missing').onclick = () => openForm({ kind: 'claim', place: null, missing: true });
     } else {
-      $('#list').innerHTML = L.map(cardHtml).join('');
+      $('#list').innerHTML = L.map((p, i) => cardHtml(p, i)).join('');
     }
     const M = maybeList();
     if (M.length) {
       $('#list').insertAdjacentHTML('beforeend', `<li class="maybe-head"><h3>${esc(t('maybeTitle'))}</h3><p>${esc(t('maybeText'))}</p></li>` +
-        M.map(p => cardHtml(p).replace('</button></li>', `</button><div class="vote under" data-vid="${esc(p.id)}"><span>${esc(t('askHookah'))}</span>${voteBtns(p)}</div></li>`)).join(''));
+        M.map(p => cardHtml(p, 0, true).replace('</button></li>', `</button><div class="vote under" data-vid="${esc(p.id)}"><span>${esc(t('askHookah'))}</span>${voteBtns(p)}</div></li>`)).join(''));
     }
     $$('#list .card').forEach(b => b.onclick = e => { if (e.target.closest('.vote')) return; openDetail(S.places.find(p => p.id === b.dataset.id)); });
     $$('#list .vote button').forEach(b => b.onclick = e => { e.stopPropagation(); vote(S.places.find(p => p.id === b.closest('.vote').dataset.vid), b.dataset.v === 'y'); });
@@ -445,8 +470,9 @@
     const tel = p.phone ? p.phone.replace(/[^\d+]/g, '') : '';
     const feats = [p.outdoor && t('outdoor'), p.food && t('food'), p.wheelchair === 'yes' && t('wheelchair'), p.price].filter(Boolean);
     $('#detailInner').innerHTML = `
-      <div class="d-hero" style="background:linear-gradient(140deg,${color(p.name)},${color(p.name + 'x')})">
-        ${p.photo ? `<img src="${esc(p.photo)}" alt="">${p.photoCredit ? `<span class="credit-ph">Photo: ${esc(p.photoCredit)}</span>` : ''}` : esc(initials(p.name))}
+      <div class="d-hero" style="background-image:${esc(art(p))}">
+        ${p.photo ? `<img src="${esc(p.photo)}" alt="">${p.photoCredit ? `<span class="credit-ph">Photo: ${esc(p.photoCredit)}</span>` : ''}` : ''}
+        <div class="d-hero-fade"></div>
         <button class="icon-btn" data-close aria-label="${esc(t('close'))}">✕</button>
       </div>
       <div class="d-body">
@@ -562,7 +588,7 @@
   function renderSaved() {
     const L = S.saved.map(p => ({ ...p, d: S.loc ? dist(S.loc, p) : null }));
     $('#savedEmpty').hidden = L.length > 0;
-    $('#savedList').innerHTML = L.map(cardHtml).join('');
+    $('#savedList').innerHTML = L.map((p, i) => cardHtml(p, i)).join('');
     $$('#savedList .card').forEach(b => b.onclick = () => openDetail(L.find(p => p.id === b.dataset.id)));
   }
 
@@ -602,7 +628,7 @@
     if (pts.length > 1) map.fitBounds(pts, { padding: [40, 40], maxZoom: 14 }); else map.setView(pts[0], 12);
   }
   function showMapCard(p) {
-    const c = $('#mapcard'); c.innerHTML = `<ul class="list">${cardHtml(p)}</ul>`; c.hidden = false;
+    const c = $('#mapcard'); c.innerHTML = `<ul class="list">${cardHtml(p, 0, true)}</ul>`; c.hidden = false;
     c.querySelector('.card').onclick = () => openDetail(p);
   }
 
