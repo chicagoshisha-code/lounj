@@ -240,7 +240,7 @@
     const dLat = r / 111320, dLng = r / (111320 * Math.max(0.2, Math.cos(loc.lat * Math.PI / 180)));
     const bbox = [loc.lng - dLng, loc.lat - dLat, loc.lng + dLng, loc.lat + dLat].map(v => v.toFixed(5)).join(',');
     // Cache per ~1 km area for 6 hours so we stay well inside the free service's limits.
-    const ck = `dev2:${loc.lat.toFixed(2)}:${loc.lng.toFixed(2)}:${r}`;
+    const ck = `dev3:${loc.lat.toFixed(2)}:${loc.lng.toFixed(2)}:${r}`;
     const hit = store.get(ck, null);
     if (hit && Date.now() - hit.at < 6 * 3600e3 && hit.places.length) return hit.places;
     const words = ['hookah', 'shisha', 'nargile', 'кальян', 'شيشة'];
@@ -260,6 +260,24 @@
           if (!NAME_RE.test(p.name) && p.osm_value !== 'hookah_lounge') continue;
           const [lon, lat] = f.geometry?.coordinates || [];
           hits.set(`${type}/${p.osm_id}`, { type, id: p.osm_id, lat, lon, tags: { name: p.name, amenity: p.osm_key === 'amenity' ? p.osm_value : '',
+            'addr:housenumber': p.housenumber || '', 'addr:street': p.street || '', 'addr:city': p.city || p.district || '', 'addr:postcode': p.postcode || '' } });
+        }
+      } catch {}
+    }), ...['mediterranean', 'lebanese', 'turkish', 'persian', 'shawarma'].map(async w => {
+      // Restaurants & cafés whose cuisine usually comes with hookah ("might offer hookah").
+      try {
+        const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 8000);
+        const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(w)}&bbox=${bbox}&lat=${loc.lat}&lon=${loc.lng}&limit=25&osm_tag=amenity:restaurant&osm_tag=amenity:cafe&osm_tag=amenity:fast_food`, { signal: ctl.signal });
+        clearTimeout(tm);
+        if (!res.ok) return;
+        const data = await res.json();
+        for (const f of data.features || []) {
+          const p = f.properties || {};
+          const type = { N: 'node', W: 'way', R: 'relation' }[p.osm_type];
+          if (!type || !p.osm_id || !p.name || p.osm_key !== 'amenity') continue;
+          const [lon, lat] = f.geometry?.coordinates || [];
+          const key = `${type}/${p.osm_id}`;
+          if (!hits.has(key)) hits.set(key, { type, id: p.osm_id, lat, lon, tags: { name: p.name, amenity: p.osm_value, cuisine: w,
             'addr:housenumber': p.housenumber || '', 'addr:street': p.street || '', 'addr:city': p.city || p.district || '', 'addr:postcode': p.postcode || '' } });
         }
       } catch {}
