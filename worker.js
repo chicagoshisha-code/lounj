@@ -61,7 +61,8 @@ async function cached(ctx, key, ttl, produce) {
   const hit = await cache.match(req);
   if (hit) return hit.json();
   const data = await produce();
-  const res = new Response(JSON.stringify(data), { headers: { 'content-type': 'application/json', 'cache-control': `public, max-age=${ttl}` } });
+  const keep = Array.isArray(data) && data.length === 0 ? 600 : ttl;
+  const res = new Response(JSON.stringify(data), { headers: { 'content-type': 'application/json', 'cache-control': `public, max-age=${keep}` } });
   ctx.waitUntil(cache.put(req, res));
   return data;
 }
@@ -75,10 +76,10 @@ async function nearby(url, env, ctx) {
   // Round to ~1 km so nearby users share the cache.
   const rl = Math.round(lat * 100) / 100, rg = Math.round(lng * 100) / 100;
   if (env.GOOGLE_PLACES_KEY) {
-    const places = await cached(ctx, `g:${rl}:${rg}:${r}`, 6 * 3600, () => googleNearby(rl, rg, r, env.GOOGLE_PLACES_KEY));
+    const places = await cached(ctx, `g2:${rl}:${rg}:${r}`, 6 * 3600, () => googleNearby(rl, rg, r, env.GOOGLE_PLACES_KEY));
     return json({ source: 'google', places }, 200, { 'cache-control': 'public, max-age=600' });
   }
-  const places = await cached(ctx, `o:${rl}:${rg}:${r}`, 6 * 3600, () => osmNearby(rl, rg, r));
+  const places = await cached(ctx, `o2:${rl}:${rg}:${r}`, 6 * 3600, () => osmNearby(rl, rg, r));
   return json({ source: 'osm', places }, 200, { 'cache-control': 'public, max-age=600' });
 }
 
@@ -102,6 +103,8 @@ async function osmNearby(lat, lng, r) {
       const res = await fetch(ep, { method: 'POST', body, headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': UA }, signal: AbortSignal.timeout(14000) });
       if (!res.ok) { lastErr = new Error(`overpass ${res.status}`); continue; }
       const data = await res.json();
+      // Overpass reports timeouts as HTTP 200 with a 'remark' and no elements: try the next mirror.
+      if (data.remark && /error|timeout/i.test(data.remark)) { lastErr = new Error('overpass: ' + data.remark); continue; }
       return normalizeOsm(data.elements || []);
     } catch (e) { lastErr = e; }
   }
