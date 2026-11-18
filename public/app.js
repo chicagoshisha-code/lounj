@@ -8,7 +8,25 @@
     set(k, v) { try { localStorage.setItem('lounj:' + k, JSON.stringify(v)); } catch {} },
   };
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const lang = (navigator.language || 'en').slice(0, 2);
+  const I = window.LOUNJ_I18N || { en: {} };
+  function pickLang() {
+    const saved = store.get('lang', null);
+    if (saved && I[saved]) return saved;
+    for (const l of (navigator.languages || [navigator.language || 'en'])) { const b = String(l).slice(0, 2).toLowerCase(); if (I[b]) return b; }
+    return 'en';
+  }
+  let LANG = pickLang();
+  function t(k, v = {}) {
+    const s = (I[LANG] && I[LANG][k]) ?? I.en[k] ?? k;
+    return String(s).replace(/\{(\w+)\}/g, (m, x) => v[x] != null ? v[x] : m);
+  }
+  function tCount(n, dist) {
+    const L = I[LANG] || I.en;
+    let cat = 'other'; try { cat = new Intl.PluralRules(LANG).select(n); } catch {}
+    const s = L['countWithin_' + cat] || L.countWithin_other || I.en['countWithin_' + (n === 1 ? 'one' : 'other')];
+    return s.replace('{n}', n).replace('{dist}', dist);
+  }
+  const unitName = () => S.unit === 'mi' ? t('mi') : t('kmShort');
   const MILES_LOCALES = /^(en-US|en-GB|en-LR|my|en-MM)$/i;
 
   const S = {
@@ -35,8 +53,8 @@
     return 2 * R * Math.asin(Math.sqrt(h));
   }
   function fmtDist(m) {
-    if (S.unit === 'mi') { const mi = m / 1609.34; return (mi < 0.1 ? '<0.1' : mi < 10 ? mi.toFixed(1) : Math.round(mi)) + ' mi'; }
-    const km = m / 1000; return (km < 0.1 ? '<0.1' : km < 10 ? km.toFixed(1) : Math.round(km)) + ' km';
+    if (S.unit === 'mi') { const mi = m / 1609.34; return (mi < 0.1 ? '<0.1' : mi < 10 ? mi.toFixed(1) : Math.round(mi)) + ' ' + t('mi'); }
+    const km = m / 1000; return (km < 0.1 ? '<0.1' : km < 10 ? km.toFixed(1) : Math.round(km)) + ' ' + t('kmShort');
   }
 
   /* ---------- opening hours (OSM, common formats) ---------- */
@@ -88,9 +106,10 @@
   }
   function fmtMin(m) {
     m %= 1440; const h = Math.floor(m / 60), mm = m % 60;
-    if (S.unit === 'mi') { const ap = h < 12 ? 'AM' : 'PM'; const hh = h % 12 || 12; return mm ? `${hh}:${String(mm).padStart(2, '0')} ${ap}` : `${hh} ${ap}`; }
-    return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    try { return new Intl.DateTimeFormat(LANG === 'en' ? navigator.language || 'en-US' : LANG, { hour: 'numeric', minute: '2-digit' }).format(new Date(2024, 0, 1, h, mm)); }
+    catch { return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`; }
   }
+  function dayName(i) { try { return new Intl.DateTimeFormat(LANG, { weekday: 'short' }).format(new Date(2024, 0, 1 + i)); } catch { return DAYNAME[DAYS[i]]; } }
   function hoursRows(p) {
     if (p.hoursList && p.hoursList.length) {
       const today = (new Date().getDay() + 6) % 7;
@@ -99,7 +118,7 @@
     const w = parseHours(p.hours);
     if (!w) return p.hours ? [['', p.hours.replace(/;\s*/g, '\n'), false]] : null;
     const today = (new Date().getDay() + 6) % 7;
-    return DAYS.map((d, i) => [DAYNAME[d], w[i].length ? w[i].map(([s, e]) => `${fmtMin(s)} – ${fmtMin(e)}`).join(', ') : 'Closed', i === today]);
+    return DAYS.map((d, i) => [dayName(i), w[i].length ? w[i].map(([s, e]) => `${fmtMin(s)} – ${fmtMin(e)}`).join(', ') : t('closed'), i === today]);
   }
 
   /* ---------- look ---------- */
@@ -129,27 +148,27 @@
   /* ---------- location ---------- */
   function setLoc(loc, { silent } = {}) {
     S.loc = loc; store.set('loc', loc);
-    $('#whereTxt').textContent = loc.label || 'Near you';
+    $('#whereTxt').textContent = loc.label || t('nearYou');
     if (!loc.label) labelFor(loc);
     if (S.view === 'welcome') show('explore');
     load({ silent });
   }
   async function labelFor(loc) {
     try {
-      const r = await fetch(`/api/where?lat=${loc.lat}&lng=${loc.lng}&lang=${lang}`).then(r => r.json());
+      const r = await fetch(`/api/where?lat=${loc.lat}&lng=${loc.lng}&lang=${LANG}`).then(r => r.json());
       if (r.name && S.loc === loc) { loc.label = r.name; store.set('loc', loc); $('#whereTxt').textContent = r.name; }
     } catch {}
   }
   function locate() {
-    if (!('geolocation' in navigator)) { toast('Location not available on this device'); return openLocSheet(); }
-    toast('Finding your location…');
+    if (!('geolocation' in navigator)) { toast(t('noGeo')); return openLocSheet(); }
+    toast(t('finding'));
     navigator.geolocation.getCurrentPosition(pos => {
       $('#toast').classList.remove('show');
       closeSheets();
       setLoc({ lat: +pos.coords.latitude.toFixed(4), lng: +pos.coords.longitude.toFixed(4), label: '', gps: true });
       watch();
     }, err => {
-      toast(err.code === 1 ? 'Location permission is off. Search a city instead.' : 'Could not get your location. Try searching a city.');
+      toast(err.code === 1 ? t('geoDenied') : t('geoFail'));
       openLocSheet();
     }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 });
   }
@@ -159,7 +178,7 @@
     S.watchId = navigator.geolocation.watchPosition(pos => {
       if (!S.loc || !S.loc.gps) return;
       const here = { lat: +pos.coords.latitude.toFixed(4), lng: +pos.coords.longitude.toFixed(4) };
-      if (dist(here, S.loc) > 3000) { setLoc({ ...here, label: '', gps: true }, { silent: true }); toast('Updated for your new location'); }
+      if (dist(here, S.loc) > 3000) { setLoc({ ...here, label: '', gps: true }, { silent: true }); toast(t('moved')); }
     }, () => {}, { enableHighAccuracy: false, maximumAge: 120000, timeout: 30000 });
   }
   $('#useLoc').onclick = locate;
@@ -174,13 +193,13 @@
     const q = e.target.value.trim();
     if (q.length < 2) { $('#cityResults').innerHTML = ''; return; }
     gT = setTimeout(async () => {
-      $('#cityResults').innerHTML = '<li class="muted" style="padding:12px 4px">Searching…</li>';
+      $('#cityResults').innerHTML = `<li class="muted" style="padding:12px 4px">${esc(t('searching'))}</li>`;
       try {
-        const { results } = await fetch(`/api/geocode?q=${encodeURIComponent(q)}&lang=${lang}`).then(r => r.json());
+        const { results } = await fetch(`/api/geocode?q=${encodeURIComponent(q)}&lang=${LANG}`).then(r => r.json());
         $('#cityResults').innerHTML = results.length ? results.map((r, i) => `<li><button data-i="${i}"><b>${esc(r.name)}</b><small>${esc(r.detail)}</small></button></li>`).join('')
-          : '<li class="muted" style="padding:12px 4px">No places found. Try a city name.</li>';
+          : `<li class="muted" style="padding:12px 4px">${esc(t('noPlaces'))}</li>`;
         $$('#cityResults button').forEach(b => b.onclick = () => { const r = results[+b.dataset.i]; closeSheets(); setLoc({ lat: r.lat, lng: r.lng, label: r.name, gps: false }); });
-      } catch { $('#cityResults').innerHTML = '<li class="err" style="padding:12px 4px">Search is unavailable right now.</li>'; }
+      } catch { $('#cityResults').innerHTML = `<li class="err" style="padding:12px 4px">${esc(t('searchDown'))}</li>`; }
     }, 350);
   });
 
@@ -189,7 +208,7 @@
     if (!S.loc) return;
     const r = toMeters(RADII[S.unit][S.radiusIdx], S.unit);
     S.loading = true;
-    if (!silent) { $('#list').innerHTML = '<li class="skel"></li>'.repeat(4); $('#status').textContent = 'Looking for lounges…'; }
+    if (!silent) { $('#list').innerHTML = '<li class="skel"></li>'.repeat(4); $('#status').textContent = t('looking'); }
     try {
       const [server, device] = await Promise.all([
         fetch(`/api/nearby?lat=${S.loc.lat}&lng=${S.loc.lng}&r=${r}`).then(res => res.ok ? res.json() : { places: [] }).catch(() => ({ places: [] })),
@@ -203,8 +222,8 @@
       S.lastFetch = { ...S.loc };
     } catch (e) {
       S.places = [];
-      $('#status').innerHTML = '<span class="err">Couldn\'t load lounges. Check your connection and try again.</span>';
-      $('#list').innerHTML = `<li class="empty"><button class="btn ghost" id="retry">Try again</button></li>`;
+      $('#status').innerHTML = `<span class="err">${esc(t('loadFail'))}</span>`;
+      $('#list').innerHTML = `<li class="empty"><button class="btn ghost" id="retry">${esc(t('tryAgain'))}</button></li>`;
       $('#retry').onclick = () => load();
       S.loading = false; return;
     }
@@ -254,13 +273,13 @@
   }
   function statusText(p) {
     const st = openState(p);
-    return st === 'open' ? '<span class="open">Open now</span>' : st === 'closed' ? '<span class="closed">Closed</span>' : '<span class="unk">Hours not listed</span>';
+    return st === 'open' ? `<span class="open">${esc(t('openNow'))}</span>` : st === 'closed' ? `<span class="closed">${esc(t('closed'))}</span>` : `<span class="unk">${esc(t('noHours'))}</span>`;
   }
   function cardHtml(p, i) {
     const tags = [];
-    if (p.partner) tags.push('<span class="badge book">Book</span>');
-    if (p.outdoor) tags.push('<span class="tag">Outdoor seating</span>');
-    if (p.food) tags.push('<span class="tag">Food</span>');
+    if (p.partner) tags.push(`<span class="badge book">${esc(t('book'))}</span>`);
+    if (p.outdoor) tags.push(`<span class="tag">${esc(t('outdoor'))}</span>`);
+    if (p.food) tags.push(`<span class="tag">${esc(t('food'))}</span>`);
     if (p.price) tags.push(`<span class="tag">${esc(p.price)}</span>`);
     return `<li><button class="card" data-id="${esc(p.id)}">
       ${thumb(p)}
@@ -273,27 +292,26 @@
   }
   function render() {
     const L = filtered();
-    const unitLabel = `${RADII[S.unit][S.radiusIdx]} ${S.unit}`;
+    const unitLabel = `${RADII[S.unit][S.radiusIdx]} ${unitName()}`;
     $('#status').innerHTML = S.places.length
-      ? `<b>${L.length}</b> lounge${L.length === 1 ? '' : 's'} within ${unitLabel}${S.openOnly ? ', open now' : ''}`
+      ? tCount(L.length, unitLabel) + (S.openOnly ? esc(t('openNowSuffix')) : '')
       : '';
     if (!L.length) {
       const wider = S.radiusIdx < 3;
       $('#list').innerHTML = `<li class="empty"><div class="empty-ic">☁</div>
-        <p>${S.places.length ? 'No lounges match your filters.' : `No hookah lounges found within ${unitLabel}.`}</p>
-        ${wider && !S.places.length ? `<button class="btn primary" id="widen">Search a wider area</button>` : ''}
-        <button class="btn ghost" id="missing">Know a lounge we're missing?</button></li>`;
+        <p>${esc(S.places.length ? t('noMatch') : t('noneWithin', { dist: unitLabel }))}</p>
+        ${wider && !S.places.length ? `<button class="btn primary" id="widen">${esc(t('wider'))}</button>` : ''}
+        <button class="btn ghost" id="missing">${esc(t('missing'))}</button></li>`;
       if ($('#widen')) $('#widen').onclick = () => { S.radiusIdx = Math.min(3, S.radiusIdx + 1); store.set('radiusIdx', S.radiusIdx); renderRadii(); load(); };
       $('#missing').onclick = () => openForm({ kind: 'claim', place: null, missing: true });
     } else {
       $('#list').innerHTML = L.map(cardHtml).join('');
       $$('#list .card').forEach(b => b.onclick = () => openDetail(S.places.find(p => p.id === b.dataset.id)));
     }
-    $('#credit').innerHTML = S.source === 'google' ? 'Listings powered by Google' :
-      'Listings from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+    $('#credit').innerHTML = S.source === 'google' ? esc(t('creditGoogle')) : t('creditOsm', { osm: OSM_LINK });
   }
   function renderRadii() {
-    $('#radii').innerHTML = RADII[S.unit].map((v, i) => `<button role="radio" aria-checked="${i === S.radiusIdx}" data-i="${i}">${v} ${S.unit}</button>`).join('');
+    $('#radii').innerHTML = RADII[S.unit].map((v, i) => `<button role="radio" aria-checked="${i === S.radiusIdx}" data-i="${i}">${v} ${esc(unitName())}</button>`).join('');
     $$('#radii button').forEach(b => b.onclick = () => { S.radiusIdx = +b.dataset.i; store.set('radiusIdx', S.radiusIdx); renderRadii(); load(); });
   }
   $('#fOpen').onclick = () => { S.openOnly = !S.openOnly; $('#fOpen').setAttribute('aria-pressed', S.openOnly); render(); if (mapReady) drawMap(); };
@@ -316,51 +334,52 @@
     return isApple ? `https://maps.apple.com/?daddr=${p.lat},${p.lng}&q=${encodeURIComponent(p.name)}`
       : `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
   }
+  function saveLabel(p) { return isSaved(p) ? ICON.saved + esc(t('saved')) : ICON.save + esc(t('save')); }
   function isSaved(p) { return S.saved.some(x => x.id === p.id); }
   function toggleSave(p) {
-    if (isSaved(p)) { S.saved = S.saved.filter(x => x.id !== p.id); toast('Removed from saved'); }
-    else { const { d, ...keep } = p; S.saved.unshift(keep); toast('Saved'); }
+    if (isSaved(p)) { S.saved = S.saved.filter(x => x.id !== p.id); toast(t('removed')); }
+    else { const { d, ...keep } = p; S.saved.unshift(keep); toast(t('saved')); }
     store.set('saved', S.saved);
   }
   function openDetail(p) {
     if (!p) return;
     const rows = hoursRows(p);
     const tel = p.phone ? p.phone.replace(/[^\d+]/g, '') : '';
-    const feats = [p.outdoor && 'Outdoor seating', p.food && 'Food', p.wheelchair === 'yes' && 'Wheelchair accessible', p.price].filter(Boolean);
+    const feats = [p.outdoor && t('outdoor'), p.food && t('food'), p.wheelchair === 'yes' && t('wheelchair'), p.price].filter(Boolean);
     $('#detailInner').innerHTML = `
       <div class="d-hero" style="background:linear-gradient(140deg,${color(p.name)},${color(p.name + 'x')})">
         ${p.photo ? `<img src="${esc(p.photo)}" alt="">${p.photoCredit ? `<span class="credit-ph">Photo: ${esc(p.photoCredit)}</span>` : ''}` : esc(initials(p.name))}
-        <button class="icon-btn" data-close aria-label="Close">✕</button>
+        <button class="icon-btn" data-close aria-label="${esc(t('close'))}">✕</button>
       </div>
       <div class="d-body">
         <h2 id="dName">${esc(p.name)}</h2>
         <div class="d-sub">${p.rating ? `<span class="star">★ ${p.rating.toFixed(1)}</span><span>(${p.ratings})</span>` : ''}
-          ${p.d != null ? `<span>${fmtDist(p.d)} away</span>` : ''}<span>${esc(p.kind || 'Hookah lounge')}</span></div>
+          ${p.d != null ? `<span>${esc(t('away', { dist: fmtDist(p.d) }))}</span>` : ''}<span>${esc(!p.kind || p.kind === 'Hookah lounge' ? t('hookahLounge') : p.kind)}</span></div>
         <div style="margin-top:6px">${statusText(p)}</div>
         <div class="acts">
-          <a href="${dirUrl(p)}" target="_blank" rel="noopener">${ICON.dir}Directions</a>
-          <a href="${tel ? 'tel:' + esc(tel) : '#'}" class="${tel ? '' : 'dis'}">${ICON.call}Call</a>
-          <a href="${p.website ? esc(p.website) : '#'}" target="_blank" rel="noopener" class="${p.website ? '' : 'dis'}">${ICON.web}Website</a>
-          <button id="dSave">${isSaved(p) ? ICON.saved + 'Saved' : ICON.save + 'Save'}</button>
+          <a href="${dirUrl(p)}" target="_blank" rel="noopener">${ICON.dir}${esc(t('directions'))}</a>
+          <a href="${tel ? 'tel:' + esc(tel) : '#'}" class="${tel ? '' : 'dis'}">${ICON.call}${esc(t('call'))}</a>
+          <a href="${p.website ? esc(p.website) : '#'}" target="_blank" rel="noopener" class="${p.website ? '' : 'dis'}">${ICON.web}${esc(t('website'))}</a>
+          <button id="dSave">${saveLabel(p)}</button>
         </div>
         <div class="rows">
-          ${p.address ? `<div class="row">${ICON.pin}<div>${esc(p.address)}</div></div>` : `<div class="row">${ICON.pin}<div class="muted">Address not listed · <a href="${dirUrl(p)}" target="_blank" rel="noopener">open in maps</a></div></div>`}
-          <div class="row">${ICON.clock}<div>${rows ? `${statusText(p)}<div class="hours">${rows.map(([d, h, t]) => `<span class="${t ? 'today' : ''}">${esc(d)}</span><span class="${t ? 'today' : ''}" style="white-space:pre-line">${esc(h)}</span>`).join('')}</div>` : '<span class="muted">Hours not listed. Call ahead to check.</span>'}</div></div>
-          ${p.phone ? `<div class="row">${ICON.call}<div><a href="tel:${esc(tel)}">${esc(p.phone)}</a></div></div>` : ''}
+          ${p.address ? `<div class="row">${ICON.pin}<div>${esc(p.address)}</div></div>` : `<div class="row">${ICON.pin}<div class="muted">${esc(t('noAddr'))} · <a href="${dirUrl(p)}" target="_blank" rel="noopener">${esc(t('openMaps'))}</a></div></div>`}
+          <div class="row">${ICON.clock}<div>${rows ? `${statusText(p)}<div class="hours">${rows.map(([d, h, t]) => `<span class="${t ? 'today' : ''}">${esc(d)}</span><span class="${t ? 'today' : ''}" style="white-space:pre-line">${esc(h)}</span>`).join('')}</div>` : `<span class="muted">${esc(t('noHoursLong'))}</span>`}</div></div>
+          ${p.phone ? `<div class="row">${ICON.call}<div><a href="tel:${esc(tel)}" dir="ltr">${esc(p.phone)}</a></div></div>` : ''}
           ${p.website ? `<div class="row">${ICON.web}<div><a href="${esc(p.website)}" target="_blank" rel="noopener">${esc(p.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a></div></div>` : ''}
           ${p.instagram ? `<div class="row">${ICON.ig}<div><a href="${esc(p.instagram)}" target="_blank" rel="noopener">Instagram</a></div></div>` : ''}
         </div>
         ${feats.length ? `<div class="feat">${feats.map(f => `<span class="tag">${esc(f)}</span>`).join('')}</div>` : ''}
         <div class="cta-box">
-          ${p.partner ? `<p><b>Book a table</b> with a deposit that goes toward your bill.</p><a class="btn primary block" href="${esc(p.partner)}">Book a table</a>`
-            : `<p>This lounge doesn't take online bookings yet. Want to reserve a table here?</p><button class="btn primary block" id="dReq">Request online booking</button>`}
-          <button class="btn ghost block" id="dShare">${ICON.share}Share this lounge</button>
+          ${p.partner ? `<p>${t('bookText')}</p><a class="btn primary block" href="${esc(p.partner)}">${esc(t('bookTable'))}</a>`
+            : `<p>${esc(t('notOnline'))}</p><button class="btn primary block" id="dReq">${esc(t('reqBooking'))}</button>`}
+          <button class="btn ghost block" id="dShare">${ICON.share}${esc(t('share'))}</button>
         </div>
-        <a href="#" class="claim" id="dClaim">Own this lounge? Claim it for free</a>
-        <p class="src">${S.source === 'google' ? 'Info from Google. ' : `Info from <a href="${esc(p.osmUrl || 'https://www.openstreetmap.org')}" target="_blank" rel="noopener">OpenStreetMap</a>. `}Details can change, so call ahead.</p>
+        <a href="#" class="claim" id="dClaim">${esc(t('claimFree'))}</a>
+        <p class="src">${S.source === 'google' ? esc(t('infoGoogle')) : t('infoOsm', { osm: `<a href="${esc(p.osmUrl || 'https://www.openstreetmap.org')}" target="_blank" rel="noopener">OpenStreetMap</a>` })} ${esc(t('callAhead'))}</p>
       </div>`;
     openSheet('#detail');
-    $('#dSave').onclick = () => { toggleSave(p); $('#dSave').innerHTML = isSaved(p) ? ICON.saved + 'Saved' : ICON.save + 'Save'; };
+    $('#dSave').onclick = () => { toggleSave(p); $('#dSave').innerHTML = saveLabel(p); };
     if ($('#dReq')) $('#dReq').onclick = () => openForm({ kind: 'booking', place: p });
     $('#dClaim').onclick = e => { e.preventDefault(); openForm({ kind: 'claim', place: p }); };
     $('#dShare').onclick = async () => {
@@ -368,7 +387,7 @@
       const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name)}&query_place_id=&center=${p.lat},${p.lng}`;
       try {
         if (navigator.share) await navigator.share({ title: p.name, text, url: `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}` });
-        else { await navigator.clipboard.writeText(`${text}\n${url}`); toast('Copied to clipboard'); }
+        else { await navigator.clipboard.writeText(`${text}\n${url}`); toast(t('copied')); }
       } catch {}
     };
   }
@@ -376,47 +395,46 @@
   /* ---------- forms ---------- */
   function openForm({ kind, place, missing }) {
     const booking = kind === 'booking';
-    const title = booking ? 'Request online booking' : missing ? 'Add a missing lounge' : 'Claim this lounge';
-    const intro = booking
-      ? `We'll let <b>${esc(place.name)}</b> know guests want to book online. Leave your email if you'd like a heads-up when booking opens.`
-      : missing ? 'Tell us the lounge name and city and we\'ll add it.'
-      : `Get bookings, deposits and deals for <b>${esc(place?.name || 'your lounge')}</b>. We'll reach out to verify you're the owner.`;
+    const title = booking ? t('reqBooking') : missing ? t('addMissingTitle') : t('claimTitle');
+    const intro = booking ? t('introBooking', { name: esc(place.name) })
+      : missing ? esc(t('introMissing'))
+      : t('introClaim', { name: esc(place?.name || t('yourLounge')) });
+    const opt = `<span class="hint">${esc(t('optional'))}</span>`;
     $('#formInner').innerHTML = `
-      <div class="sheet-head"><h2 id="formTitle">${title}</h2><button class="icon-btn" data-close aria-label="Close">✕</button></div>
+      <div class="sheet-head"><h2 id="formTitle">${esc(title)}</h2><button class="icon-btn" data-close aria-label="${esc(t('close'))}">✕</button></div>
       <p class="muted" style="margin-bottom:14px">${intro}</p>
       <form class="form" id="reqForm" novalidate>
-        ${missing ? `<label>Lounge name<input name="placeName" required maxlength="120"></label><label>City and address<input name="address" maxlength="200"></label>` : ''}
-        <label>Your name ${booking ? '<span class="hint">(optional)</span>' : ''}<input name="name" autocomplete="name" maxlength="80" ${booking ? '' : 'required'}></label>
-        <label>Email ${booking ? '<span class="hint">(optional)</span>' : ''}<input name="email" type="email" autocomplete="email" maxlength="120" ${booking ? '' : 'required'}></label>
-        ${booking ? '' : `<label>Phone <span class="hint">(optional)</span><input name="phone" type="tel" autocomplete="tel" maxlength="40"></label>`}
-        <label>Note <span class="hint">(optional)</span><textarea name="note" maxlength="500" placeholder="${booking ? 'e.g. party of 6 on Saturdays' : 'Anything we should know'}"></textarea></label>
+        ${missing ? `<label>${esc(t('fLoungeName'))}<input name="placeName" required maxlength="120"></label><label>${esc(t('fCityAddr'))}<input name="address" maxlength="200"></label>` : ''}
+        <label>${esc(t('fName'))} ${booking ? opt : ''}<input name="name" autocomplete="name" maxlength="80" ${booking ? '' : 'required'}></label>
+        <label>${esc(t('fEmail'))} ${booking ? opt : ''}<input name="email" type="email" autocomplete="email" maxlength="120" ${booking ? '' : 'required'}></label>
+        ${booking ? '' : `<label>${esc(t('fPhone'))} ${opt}<input name="phone" type="tel" autocomplete="tel" maxlength="40"></label>`}
+        <label>${esc(t('fNote'))} ${opt}<textarea name="note" maxlength="500" placeholder="${esc(booking ? t('phBooking') : t('phOther'))}"></textarea></label>
         <p class="err" id="formErr" hidden></p>
-        <button class="btn primary big" type="submit">${booking ? 'Send request' : missing ? 'Send' : 'Claim listing'}</button>
+        <button class="btn primary big" type="submit">${esc(booking ? t('sendReq') : missing ? t('send') : t('claimBtn'))}</button>
       </form>`;
     openSheet('#formSheet', true);
     $('#reqForm').onsubmit = async e => {
       e.preventDefault();
       const f = Object.fromEntries(new FormData(e.target));
       const err = $('#formErr');
-      if (!booking && (!f.name || !f.email)) { err.textContent = 'Please add your name and email.'; err.hidden = false; return; }
-      if (missing && !f.placeName) { err.textContent = 'Please add the lounge name.'; err.hidden = false; return; }
-      if (f.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email)) { err.textContent = 'That email doesn\'t look right.'; err.hidden = false; return; }
-      const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Sending…';
+      if (!booking && (!f.name || !f.email)) { err.textContent = t('errNameEmail'); err.hidden = false; return; }
+      if (missing && !f.placeName) { err.textContent = t('errLounge'); err.hidden = false; return; }
+      if (f.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email)) { err.textContent = t('errEmail'); err.hidden = false; return; }
+      const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = t('sending');
       try {
         const res = await fetch('/api/request', { method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ kind: missing ? 'claim' : kind, placeId: place?.id || 'missing', placeName: f.placeName || place?.name, address: f.address || place?.address || '', ...f }) });
         if (!res.ok) throw new Error();
         $('#formInner').innerHTML = `<div class="center" style="padding:10px 0">
           <div class="empty-ic" style="color:var(--green)">✓</div>
-          <h2 style="font-family:var(--serif)">${booking ? 'Request sent' : 'Thanks!'}</h2>
-          <p class="muted">${booking ? 'We\'ll let the lounge know. The more guests ask, the faster they join.' : 'We\'ll be in touch soon.'}</p>
-          <button class="btn primary big" data-close>Done</button></div>`;
+          <h2 style="font-family:var(--serif)">${esc(booking ? t('sentTitle') : t('thanks'))}</h2>
+          <p class="muted">${esc(booking ? t('sentText') : t('touch'))}</p>
+          <button class="btn primary big" data-close>${esc(t('done'))}</button></div>`;
         bindClose();
-      } catch { btn.disabled = false; btn.textContent = 'Try again'; err.textContent = 'Couldn\'t send. Check your connection.'; err.hidden = false; }
+      } catch { btn.disabled = false; btn.textContent = t('tryAgain'); err.textContent = t('errSend'); err.hidden = false; }
     };
   }
   $('#claimAny').onclick = () => openForm({ kind: 'claim', place: null, missing: true });
-  $('#addMissing').onclick = e => { e.preventDefault(); openForm({ kind: 'claim', place: null, missing: true }); };
 
   /* ---------- sheets ---------- */
   let lastFocus;
@@ -458,7 +476,7 @@
   }
   async function initMap() {
     if (!S.loc) return;
-    try { await loadLeaflet(); } catch { toast('Map could not load'); return; }
+    try { await loadLeaflet(); } catch { toast(t('mapFail')); return; }
     if (!map) {
       map = L.map('map', { zoomControl: false }).setView([S.loc.lat, S.loc.lng], 12);
       L.control.zoom({ position: 'topright' }).addTo(map);
@@ -493,13 +511,35 @@
   }
   $$('.seg button').forEach(b => b.onclick = () => { if (S.unit === b.dataset.u) return; S.unit = b.dataset.u; store.set('unit', S.unit); renderUnits(); renderRadii(); if (S.loc) load(); });
 
+  /* ---------- language ---------- */
+  const OSM_LINK = '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
+  function applyLang() {
+    document.documentElement.lang = LANG;
+    document.documentElement.dir = (I[LANG] && I[LANG]._dir) || 'ltr';
+    $$('[data-i18n]').forEach(e => { e.textContent = t(e.dataset.i18n); });
+    $$('[data-i18n-html]').forEach(e => { e.innerHTML = t(e.dataset.i18nHtml); });
+    $$('[data-i18n-ph]').forEach(e => { e.placeholder = t(e.dataset.i18nPh); });
+    $$('[data-i18n-aria]').forEach(e => { e.setAttribute('aria-label', t(e.dataset.i18nAria)); });
+    $('#about2').innerHTML = t('about2', { book: esc(t('book')), req: esc(t('reqBooking')) });
+    $('#mapData').innerHTML = t('mapData', { osm: OSM_LINK, tell: `<a href="#" id="addMissing">${esc(t('tellUs'))}</a>` });
+    $('#addMissing').onclick = e => { e.preventDefault(); openForm({ kind: 'claim', place: null, missing: true }); };
+    $('#whereTxt').textContent = S.loc ? (S.loc.label || t('nearYou')) : t('setLoc');
+    const sel = $('#langSel');
+    sel.innerHTML = Object.entries(I).map(([k, v]) => `<option value="${k}" ${k === LANG ? 'selected' : ''}>${esc(v._name || k)}</option>`).join('');
+  }
+  $('#langSel').addEventListener('change', e => {
+    LANG = e.target.value; store.set('lang', LANG); applyLang(); renderRadii();
+    if (S.loc) { render(); if (S.loc.gps || !S.loc.label) { S.loc.label = ''; labelFor(S.loc); } }
+    if (S.view === 'saved') renderSaved();
+  });
+
   /* ---------- start ---------- */
   function start() {
-    renderRadii(); renderUnits();
+    applyLang(); renderRadii(); renderUnits();
     if (!store.get('age', false)) { $('#ageSheet').hidden = false; document.body.style.overflow = 'hidden'; }
     $('#ageYes').onclick = () => { store.set('age', true); $('#ageSheet').hidden = true; document.body.style.overflow = ''; };
     if (S.loc) {
-      $('#whereTxt').textContent = S.loc.label || 'Near you';
+      $('#whereTxt').textContent = S.loc.label || t('nearYou');
       show('explore'); load();
       // Refresh position quietly if the person allowed GPS before.
       if (S.loc.gps && navigator.permissions) navigator.permissions.query({ name: 'geolocation' }).then(st => { if (st.state === 'granted') { watch(); } }).catch(() => {});
