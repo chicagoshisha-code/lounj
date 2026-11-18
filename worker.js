@@ -33,6 +33,7 @@ export default {
       if (request.method === 'OPTIONS') return new Response(null, { headers: cors() });
       switch (url.pathname) {
         case '/api/nearby': return await nearby(url, env, ctx);
+        case '/api/places': return await placesFromHits(request);
         case '/api/geocode': return await geocode(url, ctx);
         case '/api/where': return await where(url, ctx);
         case '/api/photo': return await photo(url, env);
@@ -131,7 +132,11 @@ async function osmNearby(lat, lng, r) {
       for (const el of d.elements || []) hits.set(`${el.type}/${el.id}`, el);
     }
   } catch {}
-  // 3) Full tags (hours, phone, website) from the main OSM API, in batches.
+  return enrich(hits);
+}
+
+async function enrich(hits) {
+  // Full tags (hours, phone, website) from the main OSM API, in batches.
   const byType = { node: [], way: [], relation: [] };
   for (const h of hits.values()) if (!h.full) byType[h.type].push(h.id);
   await Promise.all(Object.entries(byType).flatMap(([type, ids]) => {
@@ -190,6 +195,25 @@ export function normalizeOsm(elements) {
   return out;
 }
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+// The app searches Photon from the user's device (Photon blocks server traffic) and
+// sends the hits here so we can add hours/phone/website from the OSM API.
+async function placesFromHits(request) {
+  if (request.method !== 'POST') return json({ error: 'method' }, 405);
+  let body; try { body = await request.json(); } catch { return json({ error: 'bad_json' }, 400); }
+  const hits = new Map();
+  for (const h of (body.hits || []).slice(0, 150)) {
+    if (!['node', 'way', 'relation'].includes(h.type) || !Number.isInteger(+h.id)) continue;
+    const la = num(h.lat, -90, 90), lo = num(h.lon, -180, 180);
+    if (la === null || lo === null) continue;
+    const t = h.tags || {};
+    const tags = {};
+    for (const k of ['name', 'amenity', 'addr:housenumber', 'addr:street', 'addr:city', 'addr:postcode']) if (t[k]) tags[k] = String(t[k]).slice(0, 200);
+    if (!tags.name) continue;
+    hits.set(`${h.type}/${+h.id}`, { type: h.type, id: +h.id, lat: la, lon: lo, tags });
+  }
+  return json({ places: await enrich(hits) });
+}
 
 /* ---------------- Google Places (optional) ---------------- */
 async function googleNearby(lat, lng, r, key) {

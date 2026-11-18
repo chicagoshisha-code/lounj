@@ -191,11 +191,15 @@
     S.loading = true;
     if (!silent) { $('#list').innerHTML = '<li class="skel"></li>'.repeat(4); $('#status').textContent = 'Looking for lounges…'; }
     try {
-      const res = await fetch(`/api/nearby?lat=${S.loc.lat}&lng=${S.loc.lng}&r=${r}`);
-      if (!res.ok) throw new Error(res.status);
-      const data = await res.json();
-      S.source = data.source;
-      S.places = data.places.map(p => ({ ...p, d: dist(S.loc, p) })).filter(p => p.d <= r * 1.15).sort((a, b) => a.d - b.d);
+      const [server, device] = await Promise.all([
+        fetch(`/api/nearby?lat=${S.loc.lat}&lng=${S.loc.lng}&r=${r}`).then(res => res.ok ? res.json() : { places: [] }).catch(() => ({ places: [] })),
+        deviceSearch(S.loc, r),
+      ]);
+      S.source = server.source || 'osm';
+      const byId = new Map();
+      for (const p of [...(device || []), ...(server.places || [])]) byId.set(p.id, { ...(byId.get(p.id) || {}), ...p });
+      if (!server.places && !device) throw new Error('offline');
+      S.places = [...byId.values()].map(p => ({ ...p, d: dist(S.loc, p) })).filter(p => p.d <= r * 1.15).sort((a, b) => a.d - b.d);
       S.lastFetch = { ...S.loc };
     } catch (e) {
       S.places = [];
@@ -207,6 +211,41 @@
     S.loading = false;
     render();
     if (mapReady) drawMap();
+  }
+
+  // Search Photon (OpenStreetMap search) from this device, then ask our server for details.
+  const NAME_RE = /hookah|shisha|sheesha|nargil|narghil|argile|argila|kalyan|kaljan|кальян|شيشة|شيشه|نرجيلة|أرجيلة|اركيلة|قلیان|قليان|נרגילה|हुक्का/i;
+  async function deviceSearch(loc, r) {
+    if (S.source === 'google') return [];
+    const dLat = r / 111320, dLng = r / (111320 * Math.max(0.2, Math.cos(loc.lat * Math.PI / 180)));
+    const bbox = [loc.lng - dLng, loc.lat - dLat, loc.lng + dLng, loc.lat + dLat].map(v => v.toFixed(5)).join(',');
+    const words = ['hookah', 'shisha', 'hookah lounge', 'shisha lounge', 'nargile', 'kalyan', 'кальян', 'شيشة'];
+    const hits = new Map();
+    await Promise.all(words.map(async w => {
+      try {
+        const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 8000);
+        const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(w)}&bbox=${bbox}&lat=${loc.lat}&lon=${loc.lng}&limit=40`, { signal: ctl.signal });
+        clearTimeout(tm);
+        if (!res.ok) return;
+        const data = await res.json();
+        for (const f of data.features || []) {
+          const p = f.properties || {};
+          const type = { N: 'node', W: 'way', R: 'relation' }[p.osm_type];
+          if (!type || !p.osm_id || !p.name) continue;
+          if (!/^(amenity|leisure|tourism)$/.test(p.osm_key || '')) continue;
+          if (!NAME_RE.test(p.name) && p.osm_value !== 'hookah_lounge') continue;
+          const [lon, lat] = f.geometry?.coordinates || [];
+          hits.set(`${type}/${p.osm_id}`, { type, id: p.osm_id, lat, lon, tags: { name: p.name, amenity: p.osm_key === 'amenity' ? p.osm_value : '',
+            'addr:housenumber': p.housenumber || '', 'addr:street': p.street || '', 'addr:city': p.city || p.district || '', 'addr:postcode': p.postcode || '' } });
+        }
+      } catch {}
+    }));
+    if (!hits.size) return [];
+    try {
+      const res = await fetch('/api/places', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ hits: [...hits.values()] }) });
+      if (res.ok) return (await res.json()).places || [];
+    } catch {}
+    return [];
   }
 
   function filtered() {
