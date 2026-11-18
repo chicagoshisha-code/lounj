@@ -125,15 +125,14 @@
   const PAL = ['#B5532B', '#8A5A2B', '#2F6F5E', '#7A4E8A', '#A23F4F', '#3D6A9A', '#9A7B2F', '#5B6B3A'];
   function color(name) { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0; return PAL[h % PAL.length]; }
   function initials(name) { return (name.replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('') || '•').toUpperCase(); }
-  // Generated cover art for places without photos: warm glow, smoke curls and a hookah silhouette.
-  const HOOKAH_PATH = "M42 4h36v6h-3l-6 20H51l-6-20h-3zM24 33h72v8H24zM56 41h8v95h-8zM51 56h18v10H51zM49 82h22v14H49zM55 134c-2 16-22 25-28 40-5 14 4 21 33 21s38-7 33-21c-6-15-26-24-28-40z";
+  // Generated cover art: an illustrated lounge scene, coloured per place.
   const artCache = new Map();
   function art(p) {
     if (artCache.has(p.name)) return artCache.get(p.name);
     let h = 0; for (const c of p.name) h = (h * 33 + c.charCodeAt(0)) >>> 0;
-    const glow = ['#C8642E', '#B8862F', '#9A4A6B', '#3F7F6E', '#7E5BA8', '#B4473F', '#4F79B0', '#A86A2B'][h % 8];
-    const x = 55 + (h % 30), r = (h >> 5) % 2 ? 1 : -1;
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 240' preserveAspectRatio='xMidYMid slice'><defs><radialGradient id='g' cx='${x}%' cy='35%' r='85%'><stop offset='0' stop-color='${glow}'/><stop offset='.55' stop-color='${glow}' stop-opacity='.35'/><stop offset='1' stop-color='#0f0c0a'/></radialGradient></defs><rect width='400' height='240' fill='#120e0b'/><rect width='400' height='240' fill='url(#g)'/><g fill='none' stroke='rgba(255,236,210,.20)' stroke-width='3' stroke-linecap='round'><path d='M${300 * 1} 230c${-22 * r}-34 ${30 * r}-52 ${10 * r}-86s${32 * r}-52 ${10 * r}-96'/><path d='M${334} 236c${-16 * r}-26 ${26 * r}-46 ${8 * r}-72s${26 * r}-46 ${8 * r}-82'/><path d='M80 240c-18-30 26-46 8-74' stroke-opacity='.6'/></g><g transform='translate(${x * 4 - 60} 52) scale(.9)' fill='rgba(255,236,210,.16)'><path d='${HOOKAH_PATH}'/></g></svg>`;
+    const glow = ['#F0A35E', '#E8C27A', '#FF8A5C', '#F2B66D', '#E9925A', '#7FD1C1', '#F4C27F', '#FF9F6B'][h % 8];
+    const accent = ['#7A2E3A', '#2F4A6B', '#5A2A6B', '#6B3A1F', '#2E5E52', '#7A2E3A', '#4A2F6B', '#6B2A3A'][(h >> 3) % 8];
+    const svg = window.LOUNJ_SCENE ? LOUNJ_SCENE({ glow, accent, seed: h % 997 }) : '<svg xmlns="http://www.w3.org/2000/svg"/>';
     const v = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
     artCache.set(p.name, v); return v;
   }
@@ -640,6 +639,8 @@
 
   /* ---------- language ---------- */
   const OSM_LINK = '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
+  function heroArt(){const el=document.querySelector('.hero-art');if(el&&window.LOUNJ_SCENE)el.style.backgroundImage=`url("data:image/svg+xml,${encodeURIComponent(LOUNJ_SCENE({hero:true,seed:1}))}")`;}
+  heroArt();
   function applyLang() {
     document.documentElement.lang = LANG;
     document.documentElement.dir = (I[LANG] && I[LANG]._dir) || 'ltr';

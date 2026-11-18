@@ -219,8 +219,8 @@ body{background:radial-gradient(1200px 600px at 80% -10%,rgba(224,122,63,.10),tr
 
 /* Welcome */
 .welcome{padding-top:18px}
-.hero-art{width:min(86vw,340px);height:min(86vw,340px);border-radius:50%;background:radial-gradient(circle at 50% 45%,rgba(240,163,94,.35),rgba(224,122,63,.08) 45%,transparent 70%)}
-.hero-art::after{background-size:120px;filter:drop-shadow(0 10px 30px rgba(240,163,94,.45));background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 200' fill='%23F0C489'%3E%3Cpath d='M42 4h36v6h-3l-6 20H51l-6-20h-3z'/%3E%3Cellipse cx='60' cy='38' rx='36' ry='5'/%3E%3Crect x='56' y='40' width='8' height='100'/%3E%3Cellipse cx='60' cy='60' rx='9' ry='6'/%3E%3Cellipse cx='60' cy='88' rx='11' ry='8'/%3E%3Cpath d='M55 136c-2 16-22 25-28 40-5 14 4 21 33 21s38-7 33-21c-6-15-26-24-28-40z'/%3E%3Cpath d='M64 100c36-20 54 6 40 36-5 11-12 16-18 20' fill='none' stroke='%23F0C489' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E")}
+.hero-art{width:min(92vw,440px);aspect-ratio:4/3;height:auto;border-radius:24px;background:#110E0B center/cover no-repeat;box-shadow:0 20px 60px rgba(240,163,94,.25),0 0 0 1px rgba(232,194,122,.18)}
+.hero-art::after{display:none;background-size:120px;filter:drop-shadow(0 10px 30px rgba(240,163,94,.45));background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 200' fill='%23F0C489'%3E%3Cpath d='M42 4h36v6h-3l-6 20H51l-6-20h-3z'/%3E%3Cellipse cx='60' cy='38' rx='36' ry='5'/%3E%3Crect x='56' y='40' width='8' height='100'/%3E%3Cellipse cx='60' cy='60' rx='9' ry='6'/%3E%3Cellipse cx='60' cy='88' rx='11' ry='8'/%3E%3Cpath d='M55 136c-2 16-22 25-28 40-5 14 4 21 33 21s38-7 33-21c-6-15-26-24-28-40z'/%3E%3Cpath d='M64 100c36-20 54 6 40 36-5 11-12 16-18 20' fill='none' stroke='%23F0C489' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E")}
 .hero-art::before{content:"";position:absolute;inset:0;border-radius:50%;background:
  radial-gradient(40px 60px at 58% 12%,rgba(255,240,220,.18),transparent 70%),
  radial-gradient(50px 70px at 44% 4%,rgba(255,240,220,.12),transparent 70%);animation:smoke 6s ease-in-out infinite alternate}
@@ -271,3 +271,5 @@ h1{font-size:36px;background:linear-gradient(180deg,#FFF6EA,#E9C9A0);-webkit-bac
 .vote.under{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.07)}
 .age-ic{background:var(--accent-soft);color:var(--accent)}
 @media (min-width:900px){.list{grid-template-columns:1fr 1fr}}
+
+.hero-art::before{display:none}
