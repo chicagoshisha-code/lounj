@@ -100,7 +100,7 @@ async function osmNearby(lat, lng, r) {
   // 1) Photon (OSM search engine): fast keyword search inside a bounding box.
   const dLat = r / 111320, dLng = r / (111320 * Math.max(0.2, Math.cos(lat * Math.PI / 180)));
   const bbox = [lng - dLng, lat - dLat, lng + dLng, lat + dLat].map(v => v.toFixed(5)).join(',');
-  const words = ['hookah', 'shisha', 'sheesha', 'nargile', 'narghile', 'argileh', 'kalyan', 'кальян', 'شيشة', 'hookah lounge', 'shisha lounge'];
+  const words = ['hookah', 'shisha', 'nargile', 'кальян', 'شيشة'];
   const hits = new Map();
   await Promise.all(words.map(async w => {
     try {

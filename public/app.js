@@ -238,7 +238,11 @@
     if (S.source === 'google') return [];
     const dLat = r / 111320, dLng = r / (111320 * Math.max(0.2, Math.cos(loc.lat * Math.PI / 180)));
     const bbox = [loc.lng - dLng, loc.lat - dLat, loc.lng + dLng, loc.lat + dLat].map(v => v.toFixed(5)).join(',');
-    const words = ['hookah', 'shisha', 'hookah lounge', 'shisha lounge', 'nargile', 'kalyan', 'кальян', 'شيشة'];
+    // Cache per ~1 km area for 6 hours so we stay well inside the free service's limits.
+    const ck = `dev:${loc.lat.toFixed(2)}:${loc.lng.toFixed(2)}:${r}`;
+    const hit = store.get(ck, null);
+    if (hit && Date.now() - hit.at < 6 * 3600e3 && hit.places.length) return hit.places;
+    const words = ['hookah', 'shisha', 'nargile', 'кальян', 'شيشة'];
     const hits = new Map();
     await Promise.all(words.map(async w => {
       try {
@@ -262,7 +266,7 @@
     if (!hits.size) return [];
     try {
       const res = await fetch('/api/places', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ hits: [...hits.values()] }) });
-      if (res.ok) return (await res.json()).places || [];
+      if (res.ok) { const places = (await res.json()).places || []; if (places.length) store.set(ck, { at: Date.now(), places }); return places; }
     } catch {}
     return [];
   }
