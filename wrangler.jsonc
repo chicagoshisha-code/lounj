@@ -4,9 +4,9 @@
   "main": "worker.js",
   "compatibility_date": "2026-11-01",
   "assets": { "directory": "./public", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
-  "observability": { "enabled": true }
-  // Optional, add later:
-  // "kv_namespaces": [{ "binding": "LOUNJ_KV", "id": "<kv id>" }]   // saves booking requests & claims
+  "observability": { "enabled": true },
+  // Saves booking requests & listing claims (view them in Cloudflare > Storage > Workers KV > lounj-requests)
+  "kv_namespaces": [{ "binding": "LOUNJ_KV", "id": "88932af67322434297b772f604000dce" }]
   // Secrets (Cloudflare dashboard > Worker > Settings > Variables):
   //   GOOGLE_PLACES_KEY  -> switches listings to Google Places (ratings, photos)
   //   ADMIN_TOKEN        -> lets you view requests at /api/requests?token=...
