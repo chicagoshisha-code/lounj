@@ -79,7 +79,7 @@ async function nearby(url, env, ctx) {
     const places = await cached(ctx, `g2:${rl}:${rg}:${r}`, 6 * 3600, () => googleNearby(rl, rg, r, env.GOOGLE_PLACES_KEY));
     return json({ source: 'google', places }, 200, { 'cache-control': 'public, max-age=600' });
   }
-  const places = await cached(ctx, `o2:${rl}:${rg}:${r}`, 6 * 3600, () => osmNearby(rl, rg, r));
+  const places = await cached(ctx, `o3:${rl}:${rg}:${r}`, 6 * 3600, () => osmNearby(rl, rg, r));
   return json({ source: 'osm', places }, 200, { 'cache-control': 'public, max-age=600' });
 }
 
@@ -96,19 +96,62 @@ nwr["amenity"~"^(cafe|bar|pub|restaurant|nightclub|lounge)$"]["name"~"${NAME_RE}
 }
 
 async function osmNearby(lat, lng, r) {
-  const body = 'data=' + encodeURIComponent(overpassQuery(lat, lng, r));
-  let lastErr;
-  for (const ep of OVERPASS) {
+  // 1) Photon (OSM search engine): fast keyword search inside a bounding box.
+  const dLat = r / 111320, dLng = r / (111320 * Math.max(0.2, Math.cos(lat * Math.PI / 180)));
+  const bbox = [lng - dLng, lat - dLat, lng + dLng, lat + dLat].map(v => v.toFixed(5)).join(',');
+  const words = ['hookah', 'shisha', 'sheesha', 'nargile', 'narghile', 'argileh', 'kalyan', 'кальян', 'شيشة', 'hookah lounge', 'shisha lounge'];
+  const hits = new Map();
+  await Promise.all(words.map(async w => {
     try {
-      const res = await fetch(ep, { method: 'POST', body, headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': UA }, signal: AbortSignal.timeout(14000) });
-      if (!res.ok) { lastErr = new Error(`overpass ${res.status}`); continue; }
+      const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(w)}&bbox=${bbox}&lat=${lat}&lon=${lng}&limit=40`,
+        { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(8000) });
+      if (!res.ok) return;
       const data = await res.json();
-      // Overpass reports timeouts as HTTP 200 with a 'remark' and no elements: try the next mirror.
-      if (data.remark && /error|timeout/i.test(data.remark)) { lastErr = new Error('overpass: ' + data.remark); continue; }
-      return normalizeOsm(data.elements || []);
-    } catch (e) { lastErr = e; }
-  }
-  throw lastErr || new Error('overpass unavailable');
+      for (const f of data.features || []) {
+        const p = f.properties || {};
+        if (!p.osm_id || !p.osm_type || !p.name) continue;
+        if (!/^(amenity|leisure|tourism)$/.test(p.osm_key || '')) continue;
+        if (!new RegExp(NAME_RE, 'i').test(p.name) && p.osm_value !== 'hookah_lounge') continue;
+        const type = { N: 'node', W: 'way', R: 'relation' }[p.osm_type];
+        if (!type) continue;
+        const [lo, la] = f.geometry?.coordinates || [];
+        hits.set(`${type}/${p.osm_id}`, { type, id: p.osm_id, lat: la, lon: lo, tags: {
+          name: p.name, amenity: p.osm_key === 'amenity' ? p.osm_value : undefined,
+          'addr:housenumber': p.housenumber, 'addr:street': p.street, 'addr:city': p.city || p.district, 'addr:postcode': p.postcode } });
+      }
+    } catch {}
+  }));
+  // 2) Overpass, tag-only (cheap) in the same box, as a bonus. Ignored if it's slow.
+  try {
+    const [w, s, e, n] = bbox.split(',');
+    const q = `[out:json][timeout:8][bbox:${s},${w},${n},${e}];(nwr["amenity"="hookah_lounge"];nwr["hookah"="yes"];nwr["shisha"="yes"];);out center tags 80;`;
+    const res = await fetch(OVERPASS[0], { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': UA }, signal: AbortSignal.timeout(9000) });
+    if (res.ok) {
+      const d = await res.json();
+      for (const el of d.elements || []) hits.set(`${el.type}/${el.id}`, el);
+    }
+  } catch {}
+  // 3) Full tags (hours, phone, website) from the main OSM API, in batches.
+  const byType = { node: [], way: [], relation: [] };
+  for (const h of hits.values()) if (!h.full) byType[h.type].push(h.id);
+  await Promise.all(Object.entries(byType).flatMap(([type, ids]) => {
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += 100) chunks.push(ids.slice(i, i + 100));
+    return chunks.map(async chunk => {
+      try {
+        const res = await fetch(`https://api.openstreetmap.org/api/0.6/${type}s.json?${type}s=${chunk.join(',')}`,
+          { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(8000) });
+        if (!res.ok) return;
+        const d = await res.json();
+        for (const el of d.elements || []) {
+          const h = hits.get(`${type}/${el.id}`);
+          if (h && el.tags) h.tags = { ...h.tags, ...el.tags };
+        }
+      } catch {}
+    });
+  }));
+  for (const h of hits.values()) for (const k of Object.keys(h.tags)) if (h.tags[k] == null) delete h.tags[k];
+  return normalizeOsm([...hits.values()].map(h => ({ ...h, lat: h.lat ?? h.center?.lat, lon: h.lon ?? h.center?.lon })));
 }
 
 export function normalizeOsm(elements) {
