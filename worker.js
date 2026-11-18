@@ -84,13 +84,13 @@ async function nearby(url, env, ctx) {
 
 export function overpassQuery(lat, lng, r) {
   const a = `(around:${r},${lat},${lng})`;
-  return `[out:json][timeout:25];(
+  // Keep this cheap: tag lookups plus a name match limited to food & drink places.
+  return `[out:json][timeout:20];(
 nwr["amenity"="hookah_lounge"]${a};
 nwr["hookah"="yes"]${a};
 nwr["shisha"="yes"]${a};
 nwr["smoking"="hookah"]${a};
-nwr["amenity"~"^(cafe|bar|pub|restaurant|nightclub|lounge|biergarten)$"]["name"~"${NAME_RE}",i]${a};
-nwr["shop"!~"."]["name"~"(${NAME_RE}).*(lounge|bar|cafe|café|club|house|room)|(lounge|bar|cafe|café|club).*(${NAME_RE})",i]${a};
+nwr["amenity"~"^(cafe|bar|pub|restaurant|nightclub|lounge)$"]["name"~"${NAME_RE}",i]${a};
 );out center tags 120;`;
 }
 
@@ -99,7 +99,7 @@ async function osmNearby(lat, lng, r) {
   let lastErr;
   for (const ep of OVERPASS) {
     try {
-      const res = await fetch(ep, { method: 'POST', body, headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': UA } });
+      const res = await fetch(ep, { method: 'POST', body, headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': UA }, signal: AbortSignal.timeout(14000) });
       if (!res.ok) { lastErr = new Error(`overpass ${res.status}`); continue; }
       const data = await res.json();
       return normalizeOsm(data.elements || []);
