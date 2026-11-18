@@ -125,16 +125,11 @@
   const PAL = ['#B5532B', '#8A5A2B', '#2F6F5E', '#7A4E8A', '#A23F4F', '#3D6A9A', '#9A7B2F', '#5B6B3A'];
   function color(name) { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0; return PAL[h % PAL.length]; }
   function initials(name) { return (name.replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('') || '•').toUpperCase(); }
-  // Generated cover art: an illustrated lounge scene, coloured per place.
-  const artCache = new Map();
+  // Cover photos for places without their own photo (Chicago Shisha photography).
+  const COVERS = ['polish', 'turkish', 'german'];
   function art(p) {
-    if (artCache.has(p.name)) return artCache.get(p.name);
     let h = 0; for (const c of p.name) h = (h * 33 + c.charCodeAt(0)) >>> 0;
-    const glow = ['#F0A35E', '#E8C27A', '#FF8A5C', '#F2B66D', '#E9925A', '#7FD1C1', '#F4C27F', '#FF9F6B'][h % 8];
-    const accent = ['#7A2E3A', '#2F4A6B', '#5A2A6B', '#6B3A1F', '#2E5E52', '#7A2E3A', '#4A2F6B', '#6B2A3A'][(h >> 3) % 8];
-    const svg = window.LOUNJ_SCENE ? LOUNJ_SCENE({ glow, accent, seed: h % 997 }) : '<svg xmlns="http://www.w3.org/2000/svg"/>';
-    const v = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
-    artCache.set(p.name, v); return v;
+    return `url("/img/${COVERS[h % COVERS.length]}-w.webp")`;
   }
   function thumb(p, cls = 'thumb') {
     const bg = `background-image:${esc(art(p))}`;
@@ -639,7 +634,7 @@
 
   /* ---------- language ---------- */
   const OSM_LINK = '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
-  function heroArt(){const el=document.querySelector('.hero-art');if(el&&window.LOUNJ_SCENE)el.style.backgroundImage=`url("data:image/svg+xml,${encodeURIComponent(LOUNJ_SCENE({hero:true,seed:1}))}")`;}
+  function heroArt(){const el=document.querySelector('.hero-art');if(el)el.style.backgroundImage='url("/img/polish-h.webp")';}
   heroArt();
   function applyLang() {
     document.documentElement.lang = LANG;
