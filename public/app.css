@@ -77,6 +77,20 @@ h1{font-family:var(--serif);font-size:32px;line-height:1.15;letter-spacing:-.3px
 .chip,.radii button{white-space:nowrap;min-height:40px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-weight:600;font-size:15px}
 .chip[aria-pressed=true],.radii button[aria-checked=true]{background:var(--text);border-color:var(--text);color:var(--bg)}
 .radii{display:flex;gap:8px}
+#types{padding-top:6px}
+#types button{white-space:nowrap;min-height:38px;padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:transparent;font-weight:600;font-size:14px;color:var(--muted)}
+#types button[aria-checked=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.tag.cat{background:var(--accent-soft);color:var(--accent)}
+.tag.ok{background:var(--green-soft);color:var(--green)}
+.maybe-head{list-style:none;padding:18px 2px 2px}
+.maybe-head h3{font-family:var(--serif);font-size:22px}
+.maybe-head p{color:var(--muted);font-size:15px;margin-top:4px}
+.vote{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px;font-size:14px;color:var(--muted)}
+.vote button{min-height:38px;padding:6px 16px;border-radius:10px;border:1px solid var(--line);background:var(--surface2);font-weight:700;font-size:14px;color:var(--text)}
+.vote em{font-style:normal;color:var(--green);font-weight:600}
+.vote.big{margin-top:16px;padding:16px;border-radius:var(--radius);background:var(--surface);border:1px dashed var(--line);display:grid;gap:8px}
+.vote.big b{color:var(--text);font-size:16px}
+.vote.big button{display:inline-flex;justify-content:center}
 .divider{width:1px;height:24px;background:var(--line);flex:none}
 
 .status{color:var(--muted);font-size:15px;padding:6px 2px 10px;min-height:20px}
@@ -195,3 +209,5 @@ h1{font-family:var(--serif);font-size:32px;line-height:1.15;letter-spacing:-.3px
 
 [dir=rtl] .chev,[dir=rtl] .acts svg{transform:scaleX(-1)}
 [dir=rtl] body{font-family:var(--sans),'Noto Sans Arabic',Tahoma,sans-serif}
+
+.vote.under{margin:-10px 10px 0;padding:12px 14px 10px;background:var(--surface2);border:1px solid var(--line);border-top:0;border-radius:0 0 14px 14px;position:relative}

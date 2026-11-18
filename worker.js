@@ -34,6 +34,8 @@ export default {
       switch (url.pathname) {
         case '/api/nearby': return await nearby(url, env, ctx);
         case '/api/places': return await placesFromHits(request);
+        case '/api/confirm': return await confirm(request, env);
+        case '/api/confirms': return await confirms(url, env);
         case '/api/geocode': return await geocode(url, ctx);
         case '/api/where': return await where(url, ctx);
         case '/api/photo': return await photo(url, env);
@@ -189,10 +191,26 @@ export function normalizeOsm(elements) {
       wheelchair: t.wheelchair || '',
       food: !!(t.cuisine || t.food === 'yes' || t.amenity === 'restaurant'),
       kind: t.amenity === 'hookah_lounge' ? 'Hookah lounge' : t.amenity ? cap(t.amenity.replace('_', ' ')) + ' · hookah' : 'Hookah lounge',
+      cat: category(t),
+      hookah: hasHookah(t) ? 'yes' : 'maybe',
+      cuisine: (t.cuisine || '').split(';')[0].replace(/_/g, ' '),
       osmUrl: `https://www.openstreetmap.org/${e.type}/${e.id}`,
     });
   }
   return out;
+}
+const NAME_TEST = new RegExp(NAME_RE, 'i');
+function hasHookah(t) {
+  return t.amenity === 'hookah_lounge' || /^(yes|only)$/.test(t.hookah || '') || /^(yes|only)$/.test(t.shisha || '') || t.smoking === 'hookah' || NAME_TEST.test(t.name || '');
+}
+function category(t) {
+  const a = t.amenity || '';
+  if (a === 'restaurant' || a === 'fast_food' || a === 'food_court') return 'restaurant';
+  if (a === 'hookah_lounge' || a === 'lounge') return 'lounge';
+  if (a === 'cafe') return NAME_TEST.test(t.name || '') ? 'lounge' : 'cafe';
+  if (a === 'bar' || a === 'pub' || a === 'biergarten') return NAME_TEST.test(t.name || '') ? 'lounge' : 'bar';
+  if (a === 'nightclub') return 'club';
+  return 'lounge';
 }
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
@@ -202,13 +220,13 @@ async function placesFromHits(request) {
   if (request.method !== 'POST') return json({ error: 'method' }, 405);
   let body; try { body = await request.json(); } catch { return json({ error: 'bad_json' }, 400); }
   const hits = new Map();
-  for (const h of (body.hits || []).slice(0, 150)) {
+  for (const h of (body.hits || []).slice(0, 200)) {
     if (!['node', 'way', 'relation'].includes(h.type) || !Number.isInteger(+h.id)) continue;
     const la = num(h.lat, -90, 90), lo = num(h.lon, -180, 180);
     if (la === null || lo === null) continue;
     const t = h.tags || {};
     const tags = {};
-    for (const k of ['name', 'amenity', 'addr:housenumber', 'addr:street', 'addr:city', 'addr:postcode']) if (t[k]) tags[k] = String(t[k]).slice(0, 200);
+    for (const k of ['name', 'amenity', 'cuisine', 'hookah', 'shisha', 'smoking', 'addr:housenumber', 'addr:street', 'addr:city', 'addr:postcode']) if (t[k]) tags[k] = String(t[k]).slice(0, 200);
     if (!tags.name) continue;
     hits.set(`${h.type}/${+h.id}`, { type: h.type, id: +h.id, lat: la, lon: lo, tags });
   }
@@ -326,4 +344,28 @@ async function listRequests(url, env) {
   const list = await env.LOUNJ_KV.list({ limit: 500 });
   const rows = await Promise.all(list.keys.map(k => env.LOUNJ_KV.get(k.name, 'json')));
   return json({ count: rows.length, requests: rows.filter(Boolean).sort((a, b) => b.at.localeCompare(a.at)) });
+}
+
+/* ---------------- guest confirmations: "does this place have hookah?" ---------------- */
+const ID_RE = /^osm:(node|way|relation)\/\d+$|^g:[\w-]+$/;
+async function confirm(request, env) {
+  if (request.method !== 'POST') return json({ error: 'method' }, 405);
+  if (!env.LOUNJ_KV) return json({ ok: true, saved: false });
+  let b; try { b = await request.json(); } catch { return json({ error: 'bad_json' }, 400); }
+  if (!ID_RE.test(String(b.id || ''))) return json({ error: 'bad_id' }, 400);
+  const key = 'hk:' + b.id;
+  const cur = (await env.LOUNJ_KV.get(key, 'json')) || { y: 0, n: 0 };
+  if (b.yes === true) cur.y++; else if (b.yes === false) cur.n++; else return json({ error: 'bad_vote' }, 400);
+  cur.name = String(b.name || cur.name || '').slice(0, 120);
+  cur.at = new Date().toISOString();
+  await env.LOUNJ_KV.put(key, JSON.stringify(cur));
+  return json({ ok: true, y: cur.y, n: cur.n });
+}
+async function confirms(url, env) {
+  const ids = (url.searchParams.get('ids') || '').split(',').filter(i => ID_RE.test(i)).slice(0, 80);
+  if (!env.LOUNJ_KV || !ids.length) return json({ votes: {} });
+  const rows = await Promise.all(ids.map(i => env.LOUNJ_KV.get('hk:' + i, 'json')));
+  const votes = {};
+  ids.forEach((i, k) => { if (rows[k]) votes[i] = { y: rows[k].y, n: rows[k].n }; });
+  return json({ votes }, 200, { 'cache-control': 'public, max-age=60' });
 }

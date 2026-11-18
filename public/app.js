@@ -219,6 +219,7 @@
       for (const p of [...(device || []), ...(server.places || [])]) byId.set(p.id, { ...(byId.get(p.id) || {}), ...p });
       if (!server.places && !device) throw new Error('offline');
       S.places = [...byId.values()].map(p => ({ ...p, d: dist(S.loc, p) })).filter(p => p.d <= r * 1.15).sort((a, b) => a.d - b.d);
+      await applyVotes(S.places);
       S.lastFetch = { ...S.loc };
     } catch (e) {
       S.places = [];
@@ -239,12 +240,12 @@
     const dLat = r / 111320, dLng = r / (111320 * Math.max(0.2, Math.cos(loc.lat * Math.PI / 180)));
     const bbox = [loc.lng - dLng, loc.lat - dLat, loc.lng + dLng, loc.lat + dLat].map(v => v.toFixed(5)).join(',');
     // Cache per ~1 km area for 6 hours so we stay well inside the free service's limits.
-    const ck = `dev:${loc.lat.toFixed(2)}:${loc.lng.toFixed(2)}:${r}`;
+    const ck = `dev2:${loc.lat.toFixed(2)}:${loc.lng.toFixed(2)}:${r}`;
     const hit = store.get(ck, null);
     if (hit && Date.now() - hit.at < 6 * 3600e3 && hit.places.length) return hit.places;
     const words = ['hookah', 'shisha', 'nargile', 'кальян', 'شيشة'];
     const hits = new Map();
-    await Promise.all(words.map(async w => {
+    await Promise.all([...words.map(async w => {
       try {
         const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 8000);
         const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(w)}&bbox=${bbox}&lat=${loc.lat}&lon=${loc.lng}&limit=40`, { signal: ctl.signal });
@@ -262,7 +263,7 @@
             'addr:housenumber': p.housenumber || '', 'addr:street': p.street || '', 'addr:city': p.city || p.district || '', 'addr:postcode': p.postcode || '' } });
         }
       } catch {}
-    }));
+    }), overpassDevice(loc, dLat, dLng, hits)]);
     if (!hits.size) return [];
     try {
       const res = await fetch('/api/places', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ hits: [...hits.values()] }) });
@@ -271,9 +272,52 @@
     return [];
   }
 
+  // Venues tagged as serving hookah (any type) + restaurants/cafés whose cuisine often includes hookah.
+  const CUISINES = 'lebanese|turkish|arab|persian|iranian|middle_eastern|syrian|egyptian|moroccan|iraqi|afghan|kurdish|uzbek|jordanian|palestinian|yemeni|armenian|georgian|azerbaijani|mediterranean|levantine|gulf|emirati|saudi';
+  async function overpassDevice(loc, dLat, dLng, hits) {
+    const b = [loc.lat - dLat, loc.lng - dLng, loc.lat + dLat, loc.lng + dLng].map(v => v.toFixed(5)).join(',');
+    const q = `[out:json][timeout:12][bbox:${b}];(nwr["amenity"="hookah_lounge"];nwr["hookah"~"^(yes|only)$"];nwr["shisha"~"^(yes|only)$"];nwr["smoking"="hookah"];nwr["amenity"~"^(restaurant|cafe|fast_food|bar)$"]["cuisine"~"${CUISINES}",i];);out center tags 200;`;
+    for (const ep of ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
+      try {
+        const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 13000);
+        const res = await fetch(ep, { method: 'POST', body: 'data=' + encodeURIComponent(q), signal: ctl.signal });
+        clearTimeout(tm);
+        if (!res.ok) continue;
+        const d = await res.json();
+        if (d.remark && /error|timeout/i.test(d.remark)) continue;
+        for (const e of d.elements || []) {
+          const tg = e.tags || {}; if (!tg.name) continue;
+          const lat = e.lat ?? e.center?.lat, lon = e.lon ?? e.center?.lon;
+          const key = `${e.type}/${e.id}`;
+          if (!hits.has(key)) hits.set(key, { type: e.type, id: e.id, lat, lon, tags: tg });
+        }
+        return;
+      } catch {}
+    }
+  }
+  async function applyVotes(places) {
+    const maybe = places.filter(p => p.hookah === 'maybe').map(p => p.id).slice(0, 80);
+    if (!maybe.length) return;
+    try {
+      const { votes } = await fetch('/api/confirms?ids=' + encodeURIComponent(maybe.join(','))).then(r => r.json());
+      for (const p of places) {
+        const v = votes && votes[p.id]; if (!v) continue;
+        p.votes = v;
+        if (v.y >= 1 && v.y > v.n) p.hookah = 'yes', p.confirmed = true;
+        else if (v.n >= 2 && v.n > v.y) p.hookah = 'no';
+      }
+    } catch {}
+  }
+  const catLabel = p => t({ lounge: 'catLounge', restaurant: 'catRestaurant', cafe: 'catCafe', bar: 'catBar', club: 'catClub' }[p.cat] || 'catLounge');
+  const typeOk = p => S.type === 'all' || (S.type === 'lounge' ? p.cat === 'lounge' || !p.cat : p.cat && p.cat !== 'lounge');
+
   function filtered() {
     const q = S.q.toLowerCase();
-    return S.places.filter(p => (!q || p.name.toLowerCase().includes(q)) && (!S.openOnly || openState(p) === 'open'));
+    return S.places.filter(p => p.hookah !== 'maybe' && p.hookah !== 'no' && typeOk(p) && (!q || p.name.toLowerCase().includes(q)) && (!S.openOnly || openState(p) === 'open'));
+  }
+  function maybeList() {
+    const q = S.q.toLowerCase();
+    return S.places.filter(p => p.hookah === 'maybe' && S.type !== 'lounge' && (!q || p.name.toLowerCase().includes(q)) && (!S.openOnly || openState(p) === 'open'));
   }
   function statusText(p) {
     const st = openState(p);
@@ -282,6 +326,8 @@
   function cardHtml(p, i) {
     const tags = [];
     if (p.partner) tags.push(`<span class="badge book">${esc(t('book'))}</span>`);
+    if (p.cat && p.cat !== 'lounge') tags.push(`<span class="tag cat">${esc(catLabel(p))}${p.cuisine ? ' · ' + esc(p.cuisine) : ''}</span>`);
+    if (p.confirmed) tags.push(`<span class="tag ok">✓ ${esc(t('confirmedBy'))}</span>`);
     if (p.outdoor) tags.push(`<span class="tag">${esc(t('outdoor'))}</span>`);
     if (p.food) tags.push(`<span class="tag">${esc(t('food'))}</span>`);
     if (p.price) tags.push(`<span class="tag">${esc(p.price)}</span>`);
@@ -310,13 +356,41 @@
       $('#missing').onclick = () => openForm({ kind: 'claim', place: null, missing: true });
     } else {
       $('#list').innerHTML = L.map(cardHtml).join('');
-      $$('#list .card').forEach(b => b.onclick = () => openDetail(S.places.find(p => p.id === b.dataset.id)));
     }
+    const M = maybeList();
+    if (M.length) {
+      $('#list').insertAdjacentHTML('beforeend', `<li class="maybe-head"><h3>${esc(t('maybeTitle'))}</h3><p>${esc(t('maybeText'))}</p></li>` +
+        M.map(p => cardHtml(p).replace('</button></li>', `</button><div class="vote under" data-vid="${esc(p.id)}"><span>${esc(t('askHookah'))}</span>${voteBtns(p)}</div></li>`)).join(''));
+    }
+    $$('#list .card').forEach(b => b.onclick = e => { if (e.target.closest('.vote')) return; openDetail(S.places.find(p => p.id === b.dataset.id)); });
+    $$('#list .vote button').forEach(b => b.onclick = e => { e.stopPropagation(); vote(S.places.find(p => p.id === b.closest('.vote').dataset.vid), b.dataset.v === 'y'); });
     $('#credit').innerHTML = S.source === 'google' ? esc(t('creditGoogle')) : t('creditOsm', { osm: OSM_LINK });
+  }
+  function voteBtns(p) {
+    const mine = store.get('votes', {})[p.id];
+    if (mine) return `<em>${esc(t('thanksVote'))}</em>`;
+    return `<button type="button" data-v="y">${esc(t('yes'))}</button><button type="button" data-v="n">${esc(t('no'))}</button>`;
+  }
+  async function vote(p, yes) {
+    if (!p) return;
+    const v = store.get('votes', {}); if (v[p.id]) return;
+    v[p.id] = yes ? 'y' : 'n'; store.set('votes', v);
+    toast(t('thanksVote'));
+    try {
+      const r = await fetch('/api/confirm', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: p.id, yes, name: p.name }) }).then(r => r.json());
+      if (yes && r && r.y >= 1 && r.y > r.n) { p.hookah = 'yes'; p.confirmed = true; }
+    } catch {}
+    render(); if (mapReady) drawMap();
+    if (!$('#detail').hidden && cur && cur.id === p.id) openDetail(p);
   }
   function renderRadii() {
     $('#radii').innerHTML = RADII[S.unit].map((v, i) => `<button role="radio" aria-checked="${i === S.radiusIdx}" data-i="${i}">${v} ${esc(unitName())}</button>`).join('');
     $$('#radii button').forEach(b => b.onclick = () => { S.radiusIdx = +b.dataset.i; store.set('radiusIdx', S.radiusIdx); renderRadii(); load(); });
+  }
+  S.type = 'all';
+  function renderTypes() {
+    $('#types').innerHTML = [['all', 'typeAll'], ['lounge', 'typeLounges'], ['food', 'typeFood']].map(([k, l]) => `<button role="radio" aria-checked="${S.type === k}" data-t="${k}">${esc(t(l))}</button>`).join('');
+    $$('#types button').forEach(b => b.onclick = () => { S.type = b.dataset.t; renderTypes(); render(); if (mapReady) drawMap(); });
   }
   $('#fOpen').onclick = () => { S.openOnly = !S.openOnly; $('#fOpen').setAttribute('aria-pressed', S.openOnly); render(); if (mapReady) drawMap(); };
   $('#q').addEventListener('input', e => { S.q = e.target.value; render(); });
@@ -345,8 +419,10 @@
     else { const { d, ...keep } = p; S.saved.unshift(keep); toast(t('saved')); }
     store.set('saved', S.saved);
   }
+  let cur = null;
   function openDetail(p) {
     if (!p) return;
+    cur = p;
     const rows = hoursRows(p);
     const tel = p.phone ? p.phone.replace(/[^\d+]/g, '') : '';
     const feats = [p.outdoor && t('outdoor'), p.food && t('food'), p.wheelchair === 'yes' && t('wheelchair'), p.price].filter(Boolean);
@@ -358,7 +434,7 @@
       <div class="d-body">
         <h2 id="dName">${esc(p.name)}</h2>
         <div class="d-sub">${p.rating ? `<span class="star">★ ${p.rating.toFixed(1)}</span><span>(${p.ratings})</span>` : ''}
-          ${p.d != null ? `<span>${esc(t('away', { dist: fmtDist(p.d) }))}</span>` : ''}<span>${esc(!p.kind || p.kind === 'Hookah lounge' ? t('hookahLounge') : p.kind)}</span></div>
+          ${p.d != null ? `<span>${esc(t('away', { dist: fmtDist(p.d) }))}</span>` : ''}<span>${esc(p.cat ? catLabel(p) + (p.cuisine ? ' · ' + p.cuisine : '') : (!p.kind || p.kind === 'Hookah lounge' ? t('hookahLounge') : p.kind))}</span></div>
         <div style="margin-top:6px">${statusText(p)}</div>
         <div class="acts">
           <a href="${dirUrl(p)}" target="_blank" rel="noopener">${ICON.dir}${esc(t('directions'))}</a>
@@ -374,6 +450,8 @@
           ${p.instagram ? `<div class="row">${ICON.ig}<div><a href="${esc(p.instagram)}" target="_blank" rel="noopener">Instagram</a></div></div>` : ''}
         </div>
         ${feats.length ? `<div class="feat">${feats.map(f => `<span class="tag">${esc(f)}</span>`).join('')}</div>` : ''}
+        ${p.hookah === 'maybe' ? `<div class="vote big" data-vid="${esc(p.id)}"><b>${esc(t('mayOffer'))}</b><span>${esc(t('askHookah'))}</span>${voteBtns(p)}</div>` : ''}
+        ${p.confirmed ? `<div class="feat"><span class="tag ok">✓ ${esc(t('confirmedBy'))}</span></div>` : ''}
         <div class="cta-box">
           ${p.partner ? `<p>${t('bookText')}</p><a class="btn primary block" href="${esc(p.partner)}">${esc(t('bookTable'))}</a>`
             : `<p>${esc(t('notOnline'))}</p><button class="btn primary block" id="dReq">${esc(t('reqBooking'))}</button>`}
@@ -383,6 +461,7 @@
         <p class="src">${S.source === 'google' ? esc(t('infoGoogle')) : t('infoOsm', { osm: `<a href="${esc(p.osmUrl || 'https://www.openstreetmap.org')}" target="_blank" rel="noopener">OpenStreetMap</a>` })} ${esc(t('callAhead'))}</p>
       </div>`;
     openSheet('#detail');
+    $$('#detailInner .vote button').forEach(b => b.onclick = () => vote(p, b.dataset.v === 'y'));
     $('#dSave').onclick = () => { toggleSave(p); $('#dSave').innerHTML = saveLabel(p); };
     if ($('#dReq')) $('#dReq').onclick = () => openForm({ kind: 'booking', place: p });
     $('#dClaim').onclick = e => { e.preventDefault(); openForm({ kind: 'claim', place: p }); };
@@ -532,14 +611,14 @@
     sel.innerHTML = Object.entries(I).map(([k, v]) => `<option value="${k}" ${k === LANG ? 'selected' : ''}>${esc(v._name || k)}</option>`).join('');
   }
   $('#langSel').addEventListener('change', e => {
-    LANG = e.target.value; store.set('lang', LANG); applyLang(); renderRadii();
+    LANG = e.target.value; store.set('lang', LANG); applyLang(); renderTypes(); renderRadii();
     if (S.loc) { render(); if (S.loc.gps || !S.loc.label) { S.loc.label = ''; labelFor(S.loc); } }
     if (S.view === 'saved') renderSaved();
   });
 
   /* ---------- start ---------- */
   function start() {
-    applyLang(); renderRadii(); renderUnits();
+    applyLang(); renderTypes(); renderRadii(); renderUnits();
     if (!store.get('age', false)) { $('#ageSheet').hidden = false; document.body.style.overflow = 'hidden'; }
     $('#ageYes').onclick = () => { store.set('age', true); $('#ageSheet').hidden = true; document.body.style.overflow = ''; };
     if (S.loc) {
