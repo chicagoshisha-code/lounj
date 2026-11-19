@@ -127,9 +127,10 @@
   function initials(name) { return (name.replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('') || '•').toUpperCase(); }
   // Cover photos for places without their own photo (Chicago Shisha photography).
   const COVERS = ['polish', 'turkish', 'german'];
-  function art(p) {
+  function art(p, i) {
     let h = 0; for (const c of p.name) h = (h * 33 + c.charCodeAt(0)) >>> 0;
-    return `url("/img/${COVERS[h % COVERS.length]}-w.webp")`;
+    const k = Number.isInteger(i) ? i : h;
+    return `url("/img/${COVERS[k % COVERS.length]}-w.webp")`;
   }
   function thumb(p, cls = 'thumb') {
     const bg = `background-image:${esc(art(p))}`;
@@ -360,7 +361,7 @@
       const st = openState(p);
       const pill = st === 'open' ? `<span class="pill open">${esc(t('openNow'))}</span>` : st === 'closed' ? `<span class="pill closed">${esc(t('closed'))}</span>` : '';
       return `<li class="rise" style="animation-delay:${Math.min(i || 0, 8) * 40}ms"><button class="card big" data-id="${esc(p.id)}">
-      <div class="cover" style="background-image:${esc(art(p))}">${p.photo ? `<img src="${esc(p.photo)}" alt="" loading="lazy">` : ''}
+      <div class="cover" style="background-image:${esc(art(p, i))}">${p.photo ? `<img src="${esc(p.photo)}" alt="" loading="lazy">` : ''}
         <div class="cover-top">${pill}${p.rating ? `<span class="pill rate">★ ${p.rating.toFixed(1)}</span>` : ''}</div>
         <div class="cover-bottom"><h3>${esc(p.name)}</h3>
           <div class="cover-sub">${esc(p.cat ? catLabel(p) : t('hookahLounge'))}${p.d != null ? ' · ' + fmtDist(p.d) : ''}</div></div>
